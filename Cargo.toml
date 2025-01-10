@@ -1,0 +1,19 @@
+[package]
+name = "entropy_playground"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+kurbo = "0.11.1"
+plotters = "0.3.7"
+rand = "0.8.5"
+usvg = "0.44.0"
+svg-path-parser = { git = "https://github.com/unicodingunicorn/svg-path-parser" }
+regex = "1.11.1"
+serde_json = "1.0.134"
+serde = { version = "1.0", features = ["derive"] }
+rand_distr = "0.4.3"
+petgraph = "0.7.0"
+
+[profile.release]
+debug = true
