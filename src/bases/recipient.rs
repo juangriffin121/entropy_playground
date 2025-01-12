@@ -1,24 +1,24 @@
-use crate::bases::{
-    bond::BondDefinitions,
-    initialization::recursive_definitions,
-    reaction::{self, BreakingReactionBlueprint, FormingReactionBlueprint, ParticleBlueprint},
-};
-
 use super::{
     atom::{Atom, DistributionJSON, Element, ElementsJSON},
     bond::{Bond, BondForce, BondProperties},
     checks::JSONChecker,
-    loader::{load, FileExtension},
+    initialization::Either,
+    loader::load,
     molecule::{Molecule, MoleculeBlueprint, MoleculesJSON},
     physics::{Force, Gravity, Grid, GridJSON},
 };
-use rand::{distributions, rngs::ThreadRng, thread_rng, Rng};
+use crate::bases::{
+    bond::BondDefinitions,
+    initialization::recursive_definitions,
+    reaction::{BreakingReactionBlueprint, FormingReactionBlueprint, ParticleBlueprint},
+};
+use rand::Rng;
 use rand_distr::{Distribution, Normal};
-use std::{cell::RefCell, fs, hash::Hash, iter::zip, rc::Rc};
 use std::{
     collections::{HashMap, HashSet},
     usize,
 };
+use std::{fs, hash::Hash};
 
 pub struct Recipient {
     pub shape: (f32, f32), //can change it to Shape trait to implement shapes other than rectangle
@@ -38,8 +38,13 @@ pub struct Recipient {
     pub bond_blueprints: Option<HashMap<(String, String), BondProperties>>,
     pub next_bond_id: usize,
 
-    pub forming_reactions: Option<Vec<FormingReactionBlueprint>>,
-    pub breaking_reactions: Option<Vec<BreakingReactionBlueprint>>,
+    pub forming_reactions: Option<
+        HashMap<
+            (Either<ParticleBlueprint>, (Option<usize>, Option<usize>)),
+            FormingReactionBlueprint,
+        >,
+    >,
+    pub breaking_reactions: Option<HashMap<(MoleculeBlueprint, usize), BreakingReactionBlueprint>>,
 
     pub force_registry: Vec<Box<dyn Force>>,
 }
@@ -52,8 +57,8 @@ pub struct RecipientJSON {
     pub iterations: i32,
     pub dt: f32,
     pub simulation_rate: i32,
-    pub grid: Option<GridJSON>,
     pub references: References,
+    pub use_grid: bool,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
@@ -71,7 +76,7 @@ impl Recipient {
             data.references.load_and_check();
 
         let (forming_reactions, breaking_reactions, molecule_blueprints) =
-            match all_fragmentations(&molecule_blueprints) {
+            match all_fragmentations(molecule_blueprints) {
                 Some((a, b, c)) => (Some(a), Some(b), Some(c)),
                 None => (None, None, None),
             };
@@ -83,10 +88,20 @@ impl Recipient {
         let mut atoms = Vec::new();
         let mut id_: usize = 0;
 
+        let biggest_radius_f32 = elements_data
+            .values()
+            .max_by(|x, y| {
+                x.radius
+                    .partial_cmp(&y.radius)
+                    .expect("atoms with None radius")
+            })
+            .map(|x| x.radius)
+            .expect("couldnt find biggest_radius");
+
+        let biggest_radius: u32 = biggest_radius_f32.ceil() as u32;
         for (i, path) in paths.iter().enumerate() {
-            let (closed, points) = path;
-            let points = remove_duplicates(points.clone());
-            println!("path number {i:?} with {:?} points", points.len());
+            let (_closed, points) = path;
+            let points = remove_duplicates(points.clone(), biggest_radius);
 
             for point in points {
                 let chemical_nature = match distribution {
@@ -104,12 +119,16 @@ impl Recipient {
             }
         }
 
-        let grid = match data.grid {
-            Some(grid_data) => Some(Grid::from_grid_json(grid_data, shape)),
-            None => None,
+        let grid = if data.use_grid {
+            let cell_size = (2.0 * biggest_radius_f32, 2.0 * biggest_radius_f32);
+            let cells = (
+                (shape.0 / cell_size.0).ceil() as i32,
+                (shape.1 / cell_size.1).ceil() as i32,
+            );
+            Some(Grid::new(cells, cell_size))
+        } else {
+            None
         };
-        println!("{:#?}", breaking_reactions);
-
         Recipient {
             shape,
             iterations: data.iterations,
@@ -232,8 +251,8 @@ impl References {
         )
     }
 }
-fn remove_duplicates(points: Vec<(f64, f64)>) -> Vec<(f32, f32)> {
-    let scale = 1; // Scale factor for quantization
+fn remove_duplicates(points: Vec<(f64, f64)>, biggest_radius: u32) -> Vec<(f32, f32)> {
+    let scale = 1.0 / (biggest_radius as f32);
     let unique_points: HashSet<_> = points
         .into_iter()
         .map(|(x, y)| {
@@ -285,13 +304,14 @@ fn nature_without_distribution(i: usize) -> String {
 }
 
 fn all_fragmentations(
-    explicit_molecules: &Option<HashMap<String, MoleculeBlueprint>>,
+    explicit_molecules: Option<HashMap<String, MoleculeBlueprint>>,
 ) -> Option<(
-    Vec<FormingReactionBlueprint>,
-    Vec<BreakingReactionBlueprint>,
+    HashMap<(Either<ParticleBlueprint>, (Option<usize>, Option<usize>)), FormingReactionBlueprint>,
+    HashMap<(MoleculeBlueprint, usize), BreakingReactionBlueprint>,
     Vec<MoleculeBlueprint>,
 )> {
     let mut reaction_registry = HashMap::new();
+
     for (molecule_name, molecule) in explicit_molecules.as_ref()?.iter() {
         recursive_definitions(
             &ParticleBlueprint::Molecule(molecule.clone()),
@@ -299,26 +319,40 @@ fn all_fragmentations(
         );
     }
 
-    let forming_reactions: Vec<FormingReactionBlueprint> = reaction_registry
+    let forming_reactions: HashMap<
+        (Either<ParticleBlueprint>, (Option<usize>, Option<usize>)),
+        FormingReactionBlueprint,
+    > = reaction_registry
         .iter()
         .map(|(_, molecule_reactions)| {
             molecule_reactions
                 .iter()
-                .map(|(reaction, _)| reaction.clone())
+                .map(|(reaction, _)| {
+                    (
+                        (reaction.reactants.clone(), reaction.atom_idxs),
+                        reaction.clone(),
+                    )
+                })
                 .collect::<Vec<_>>()
         })
         .flatten()
         .collect();
-    let breaking_reactions: Vec<BreakingReactionBlueprint> = reaction_registry
-        .iter()
-        .map(|(_, molecule_reactions)| {
-            molecule_reactions
-                .iter()
-                .map(|(_, reaction)| reaction.clone())
-                .collect::<Vec<_>>()
-        })
-        .flatten()
-        .collect();
+    let breaking_reactions: HashMap<(MoleculeBlueprint, usize), BreakingReactionBlueprint> =
+        reaction_registry
+            .iter()
+            .map(|(_, molecule_reactions)| {
+                molecule_reactions
+                    .iter()
+                    .map(|(_, reaction)| {
+                        (
+                            (reaction.reactants.clone(), reaction.bond_idx),
+                            reaction.clone(),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .flatten()
+            .collect();
     let molecules: Vec<MoleculeBlueprint> = reaction_registry
         .iter()
         .map(|(molecule, _)| molecule.clone())

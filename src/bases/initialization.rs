@@ -1,10 +1,7 @@
 use super::{
-    atom::{DistributionJSON, Element, ElementsJSON},
-    bond::BondDefinitions,
-    molecule::{Molecule, MoleculeBlueprint, MoleculesJSON},
+    molecule::MoleculeBlueprint,
     reaction::{BreakingReactionBlueprint, FormingReactionBlueprint, ParticleBlueprint},
 };
-use rand::distributions;
 use std::collections::{HashMap, HashSet};
 
 pub fn recursive_definitions(
@@ -15,7 +12,7 @@ pub fn recursive_definitions(
     >,
 ) {
     match particle {
-        ParticleBlueprint::Atom(name) => {
+        ParticleBlueprint::Atom(_name) => {
             // not adding anything to registry
         }
         ParticleBlueprint::Molecule(ref molecule) => {
@@ -48,10 +45,10 @@ pub fn recursive_definitions(
                         recursive_definitions(&new_particle, reaction_registry);
                     }
                     Either::Two((particle1, particle2)) => {
-                        if let ParticleBlueprint::Molecule(ref molecule) = particle1 {
+                        if let ParticleBlueprint::Molecule(ref _molecule) = particle1 {
                             recursive_definitions(&particle1, reaction_registry);
                         }
-                        if let ParticleBlueprint::Molecule(ref molecule) = particle2 {
+                        if let ParticleBlueprint::Molecule(ref _molecule) = particle2 {
                             recursive_definitions(&particle2, reaction_registry);
                         }
                     }
@@ -63,7 +60,7 @@ pub fn recursive_definitions(
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum Either<T> {
     One(T),
     Two((T, T)),
@@ -82,13 +79,13 @@ fn get_reactions_and_fragments(
     match get_fragments(&molecule.atoms, remaining, bond.0, bond.1) {
         Either::One((fragment, Some(new_idx_map))) => {
             let breaking_reaction = BreakingReactionBlueprint {
-                reactants: ParticleBlueprint::Molecule(molecule.clone()),
+                reactants: molecule.clone(),
                 products: Either::One(fragment.clone()),
                 bond_idx,
             };
 
             let forming_reaction = FormingReactionBlueprint {
-                products: ParticleBlueprint::Molecule(molecule.clone()),
+                products: molecule.clone(),
                 reactants: Either::One(fragment.clone()),
                 atom_idxs: (Some(new_idx_map[&bond.0]), Some(new_idx_map[&bond.1])),
             };
@@ -100,13 +97,13 @@ fn get_reactions_and_fragments(
         }
         Either::Two(((fragment, fragment_idx_map), (fragment2, fragment2_idx_map))) => {
             let breaking_reaction = BreakingReactionBlueprint {
-                reactants: ParticleBlueprint::Molecule(molecule.clone()),
+                reactants: molecule.clone(),
                 products: Either::Two((fragment.clone(), fragment2.clone())),
                 bond_idx,
             };
 
             let forming_reaction = FormingReactionBlueprint {
-                products: ParticleBlueprint::Molecule(molecule.clone()),
+                products: molecule.clone(),
                 reactants: Either::Two((fragment.clone(), fragment2.clone())),
                 atom_idxs: (
                     match fragment_idx_map {
@@ -158,7 +155,7 @@ fn get_fragments(
     if !atoms_seen.contains(&atom2_id) {
         let current = atom2_id;
         let (atom_idxs, bonds) = dfs(current, &mut atoms_seen, &mut bonds_seen, &bonds_map);
-        if let Some(current) = (0..num_atoms).find(|a| !atoms_seen.contains(a)) {
+        if let Some(_id) = (0..num_atoms).find(|a| !atoms_seen.contains(a)) {
             panic!()
         } else {
             return Either::Two((
@@ -167,7 +164,7 @@ fn get_fragments(
             ));
         }
     } else {
-        if let Some(current) = (0..num_atoms).find(|a| !atoms_seen.contains(a)) {
+        if let Some(_id) = (0..num_atoms).find(|a| !atoms_seen.contains(a)) {
             panic!()
         } else {
             return Either::One((particle, particle_idx_map));

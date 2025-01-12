@@ -1,8 +1,11 @@
-use super::{atom::Atom, bond::Bond, molecule::Molecule, recipient::Recipient};
-use plotters::style::RGBColor;
+use super::{
+    atom::Atom,
+    initialization::Either,
+    molecule::{Molecule, MoleculeBlueprint},
+    reaction::{self, check_reactions, FormingReactionBlueprint, ParticleBlueprint},
+    recipient::Recipient,
+};
 use std::{
-    any::Any,
-    borrow::Borrow,
     collections::{HashMap, HashSet},
     fmt::Debug,
     iter::zip,
@@ -40,25 +43,61 @@ impl CollisionEngine {
     }
 
     pub fn process_collisions(&self, recipient: &mut Recipient) {
-        match &mut recipient.grid {
+        let atoms = &mut recipient.contents;
+        let dimensions = recipient.shape;
+        let forming_reactions = &recipient.forming_reactions;
+        let molecule_registry = &recipient.molecule_registry;
+        let molecule_blueprints = &recipient.molecule_blueprints;
+        let dt = recipient.dt;
+        let reactions = match &mut recipient.grid {
             Some(grid) => {
-                let atoms = &mut recipient.contents;
                 grid.populate(atoms);
-                self.grid_based_collisions(grid, atoms, recipient.shape, recipient.dt);
+
+                self.grid_based_collisions(
+                    grid,
+                    atoms,
+                    dimensions,
+                    forming_reactions,
+                    molecule_registry,
+                    molecule_blueprints,
+                    dt,
+                )
             }
-            None => self.gridless_process_collisions(recipient),
+            None => self.gridless_process_collisions(
+                atoms,
+                dimensions,
+                forming_reactions,
+                molecule_registry,
+                molecule_blueprints,
+                dt,
+            ),
+        };
+
+        let molecule_registry = &mut recipient.molecule_registry;
+        for (atom_ids, reactant_idxs, reaction) in reactions {
+            // ensure not seen molecules if molecules for now, perhaps later it can be done better
+            reaction.apply(atom_ids, reactant_idxs, atoms, molecule_registry);
         }
     }
 
-    pub fn grid_based_collisions(
+    pub fn grid_based_collisions<'a>(
         &self,
         grid: &Grid,
         atoms: &mut Vec<Atom>,
         dimensions: (f32, f32),
+        forming_reactions: &'a Option<
+            HashMap<
+                (Either<ParticleBlueprint>, (Option<usize>, Option<usize>)),
+                FormingReactionBlueprint,
+            >,
+        >,
+        molecule_registry: &HashMap<usize, Molecule>,
+        molecule_blueprints: &Option<Vec<MoleculeBlueprint>>,
         dt: f32,
-    ) {
+    ) -> Vec<((usize, usize), Either<usize>, &'a FormingReactionBlueprint)> {
         let mut seen: HashSet<(usize, usize)> = HashSet::new();
-        for (atom_idx) in 0..atoms.len() {
+        let mut reactions = Vec::new();
+        for atom_idx in 0..atoms.len() {
             let cell = grid.get_cell(&atoms[atom_idx]);
             let neighbors = grid.neighbors(cell);
             for neighbor in neighbors {
@@ -77,7 +116,17 @@ impl CollisionEngine {
                     let a = &mut left[i];
                     let b = &mut right[0];
                     if self.check_collision(a, b) {
-                        self.resolve_particle_particle(a, b, dt);
+                        let reaction = self.resolve_particle_particle(
+                            a,
+                            b,
+                            forming_reactions,
+                            molecule_registry,
+                            molecule_blueprints,
+                            dt,
+                        );
+                        if let Some(reaction) = reaction {
+                            reactions.push(reaction);
+                        }
                     }
                 }
             }
@@ -86,11 +135,24 @@ impl CollisionEngine {
                 self.resolve_particle_wall(&mut atoms[atom_idx], dimensions, wall);
             }
         }
+        reactions
     }
 
-    pub fn gridless_process_collisions(&self, recipient: &mut Recipient) {
-        let atoms = &mut recipient.contents;
-        let dimensions = recipient.shape;
+    pub fn gridless_process_collisions<'a>(
+        &self,
+        atoms: &mut Vec<Atom>,
+        dimensions: (f32, f32),
+        forming_reactions: &'a Option<
+            HashMap<
+                (Either<ParticleBlueprint>, (Option<usize>, Option<usize>)),
+                FormingReactionBlueprint,
+            >,
+        >,
+        molecule_registry: &HashMap<usize, Molecule>,
+        molecule_blueprints: &Option<Vec<MoleculeBlueprint>>,
+        dt: f32,
+    ) -> Vec<((usize, usize), Either<usize>, &'a FormingReactionBlueprint)> {
+        let mut reactions = Vec::new();
         for i in 0..atoms.len() {
             for j in (i + 1)..atoms.len() {
                 let (left, right) = atoms.split_at_mut(j);
@@ -98,7 +160,17 @@ impl CollisionEngine {
                 let b = &mut right[0];
 
                 if self.check_collision(a, b) {
-                    self.resolve_particle_particle(a, b, recipient.dt);
+                    let reaction_info = self.resolve_particle_particle(
+                        a,
+                        b,
+                        forming_reactions,
+                        molecule_registry,
+                        molecule_blueprints,
+                        dt,
+                    );
+                    if let Some(reaction_info) = reaction_info {
+                        reactions.push(reaction_info);
+                    }
                 }
             }
 
@@ -106,16 +178,30 @@ impl CollisionEngine {
                 self.resolve_particle_wall(&mut atoms[i], dimensions, wall);
             }
         }
+        reactions
     }
 
-    pub fn resolve_particle_particle(&self, a: &mut Atom, b: &mut Atom, dt: f32) {
+    pub fn resolve_particle_particle<'a>(
+        &self,
+        a: &mut Atom,
+        b: &mut Atom,
+        forming_reactions: &'a Option<
+            HashMap<
+                (Either<ParticleBlueprint>, (Option<usize>, Option<usize>)),
+                FormingReactionBlueprint,
+            >,
+        >,
+        molecule_registry: &HashMap<usize, Molecule>,
+        molecule_blueprints: &Option<Vec<MoleculeBlueprint>>,
+        dt: f32,
+    ) -> Option<((usize, usize), Either<usize>, &'a FormingReactionBlueprint)> {
         let dx = a.position.0 - b.position.0;
         let dy = a.position.1 - b.position.1;
         let distance = (dx * dx + dy * dy).sqrt();
 
         if distance < 1e-6 {
             println!("happened {:?}, {:?}", a.id, b.id);
-            return;
+            return None;
         }
 
         let nx = dx / distance;
@@ -127,7 +213,7 @@ impl CollisionEngine {
         let dot_product = dvx * nx + dvy * ny;
 
         if dt * dot_product >= 1e-6 {
-            return;
+            return None;
         }
 
         let mass1 = a.mass;
@@ -136,10 +222,19 @@ impl CollisionEngine {
 
         let impulse = 2.0 * dot_product / mass_sum;
 
+        let (idxs, reaction) = check_reactions(
+            a,
+            b,
+            forming_reactions,
+            molecule_registry,
+            molecule_blueprints,
+        )?;
+
         a.velocity.0 -= impulse * mass2 * nx;
         a.velocity.1 -= impulse * mass2 * ny;
         b.velocity.0 += impulse * mass1 * nx;
         b.velocity.1 += impulse * mass1 * ny;
+        Some(((a.id, b.id), idxs, reaction))
     }
 
     pub fn resolve_particle_wall(&self, atom: &mut Atom, shape: (f32, f32), wall: Wall) {
@@ -189,6 +284,7 @@ impl Grid {
     }
 
     pub fn populate(&mut self, atoms: &Vec<Atom>) {
+        self.clear();
         for (i, atom) in atoms.iter().enumerate() {
             self.place(atom, i as usize);
         }

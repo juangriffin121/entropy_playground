@@ -21,9 +21,9 @@ pub struct Atom {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Element {
-    color: [u8; 3],
-    mass: f32,
-    radius: f32,
+    pub color: [u8; 3],
+    pub mass: f32,
+    pub radius: f32,
 }
 
 #[derive(Debug, Deserialize)]

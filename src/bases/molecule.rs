@@ -1,12 +1,11 @@
-use super::{atom::Atom, physics::Force, recipient::Recipient};
 use serde::Deserialize;
-use std::{collections::HashMap, fs, rc::Rc};
+use std::{collections::HashMap, fs};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Molecule {
     pub id: usize,
     pub bonds: Vec<usize>,
-    pub chemical_nature: String,
+    pub blueprint_id: usize,
 }
 
 #[derive(Debug, Deserialize)]
@@ -61,13 +60,6 @@ impl MoleculeBlueprint {
             bonds: new_bonds,
             canonical: true,
         }
-    }
-
-    pub fn equals(&self, other: &MoleculeBlueprint) -> bool {
-        let a = self.canonicalize();
-        let b = other.canonicalize();
-        let answer = a.atoms == b.atoms && a.bonds == b.bonds;
-        answer
     }
 
     pub fn compare_canonical(&self, other: &MoleculeBlueprint) -> bool {

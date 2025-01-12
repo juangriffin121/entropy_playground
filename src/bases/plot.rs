@@ -5,45 +5,6 @@ use std::collections::HashMap;
 use super::{atom::Atom, molecule::Molecule, recipient::Recipient}; // Plotting library
 
 // Function to plot points
-pub fn plot_paths(paths: Vec<(bool, Vec<(f64, f64)>)>, output_path: &str) {
-    let root_area = BitMapBackend::new(output_path, (800, 600)).into_drawing_area();
-    root_area.fill(&BLACK).unwrap();
-
-    let mut chart = ChartBuilder::on(&root_area)
-        .caption("Generated Path Points", ("Arial", 20))
-        .build_cartesian_2d(0.0..1000.0, -1000.0..0.0) // Adjust the range as needed
-        .unwrap();
-
-    chart.configure_mesh().draw().unwrap();
-
-    // Plot all the points
-    for (i, path) in paths.iter().enumerate() {
-        let color = {
-            if (i % 2) == 0 {
-                &RED
-            } else {
-                &BLUE
-            }
-        };
-
-        let (closed, points) = path;
-        chart
-            .draw_series(PointSeries::of_element(
-                points.iter().map(|p| (p.0, -p.1)),
-                2,
-                color,
-                &|c, s, _| {
-                    return EmptyElement::at(c)  // Position the points
-                    + Circle::new((0,0), s, ShapeStyle {
-                        color: color.to_rgba(),
-                        filled: true,
-                        stroke_width: 0,
-                    });
-                },
-            ))
-            .unwrap();
-    }
-}
 
 pub fn plot_recipient(recipient: &Recipient, output_path: &str, plot_grid: bool) {
     let root_area = BitMapBackend::new(
@@ -97,5 +58,45 @@ pub fn plot_recipient(recipient: &Recipient, output_path: &str, plot_grid: bool)
                 ))
                 .unwrap();
         }
+    }
+}
+
+fn plot_paths(paths: Vec<(bool, Vec<(f64, f64)>)>, output_path: &str) {
+    let root_area = BitMapBackend::new(output_path, (800, 600)).into_drawing_area();
+    root_area.fill(&BLACK).unwrap();
+
+    let mut chart = ChartBuilder::on(&root_area)
+        .caption("Generated Path Points", ("Arial", 20))
+        .build_cartesian_2d(0.0..1000.0, -1000.0..0.0) // Adjust the range as needed
+        .unwrap();
+
+    chart.configure_mesh().draw().unwrap();
+
+    // Plot all the points
+    for (i, path) in paths.iter().enumerate() {
+        let color = {
+            if (i % 2) == 0 {
+                &RED
+            } else {
+                &BLUE
+            }
+        };
+
+        let (closed, points) = path;
+        chart
+            .draw_series(PointSeries::of_element(
+                points.iter().map(|p| (p.0, -p.1)),
+                2,
+                color,
+                &|c, s, _| {
+                    return EmptyElement::at(c)  // Position the points
+                    + Circle::new((0,0), s, ShapeStyle {
+                        color: color.to_rgba(),
+                        filled: true,
+                        stroke_width: 0,
+                    });
+                },
+            ))
+            .unwrap();
     }
 }
