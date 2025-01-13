@@ -2,7 +2,7 @@ use super::{
     atom::Atom,
     initialization::Either,
     molecule::{Molecule, MoleculeBlueprint},
-    reaction::{self, check_reactions, FormingReactionBlueprint, ParticleBlueprint},
+    reaction::{check_forming_reactions, FormingReactionBlueprint, ParticleBlueprint},
     recipient::Recipient,
 };
 use std::{
@@ -74,9 +74,26 @@ impl CollisionEngine {
         };
 
         let molecule_registry = &mut recipient.molecule_registry;
+        let bond_map = &mut recipient.bond_map;
+        let next_molecule_id = &mut recipient.next_molecule_id;
+        let blueprint_id_map = &recipient.blueprint_id_map;
+        let bond_blueprints = &recipient.bond_blueprints;
         for (atom_ids, reactant_idxs, reaction) in reactions {
             // ensure not seen molecules if molecules for now, perhaps later it can be done better
-            reaction.apply(atom_ids, reactant_idxs, atoms, molecule_registry);
+            reaction.apply(
+                atom_ids,
+                reactant_idxs,
+                atoms,
+                molecule_registry,
+                bond_map,
+                next_molecule_id,
+                blueprint_id_map
+                    .as_ref()
+                    .expect("cant have reactions without molecule_blueprints"),
+                bond_blueprints
+                    .as_ref()
+                    .expect("cant have reactions without bond_blueprints"),
+            );
         }
     }
 
@@ -222,7 +239,7 @@ impl CollisionEngine {
 
         let impulse = 2.0 * dot_product / mass_sum;
 
-        let (idxs, reaction) = check_reactions(
+        let (idxs, reaction) = check_forming_reactions(
             a,
             b,
             forming_reactions,
@@ -388,38 +405,43 @@ impl Recipient {
                 (acc_x + f_x, acc_y + f_y)
             })
     }
+
     fn update_bonds(&mut self) {
         // First collect all updates without mutating anything
-        let bond_updates: Vec<(usize, (f32, f32), bool)> = self
-            .bond_registry
+        let bond_updates: Vec<((usize, usize), (f32, f32), bool)> = self
+            .bond_map
             .iter()
-            .map(|(&bond_id, bond)| {
-                let atom1 = &self.contents[bond.atom1_id];
-                let atom2 = &self.contents[bond.atom2_id];
+            .map(|(&(atom1_id, atom2_id), bond)| {
+                let atom1 = &self.contents[atom1_id];
+                let atom2 = &self.contents[atom2_id];
                 let dx = atom2.position.0 - atom1.position.0;
                 let dy = atom2.position.1 - atom1.position.1;
                 let distance = (dx * dx + dy * dy).sqrt();
                 let force_magnitude = bond.k * (distance - bond.equilibrium_distance);
                 let fx = force_magnitude * dx / distance;
                 let fy = force_magnitude * dy / distance;
-                (bond_id, (fx, fy), distance > bond.breaking_distance)
+                (
+                    (atom1_id, atom2_id),
+                    (fx, fy),
+                    distance > bond.breaking_distance,
+                )
             })
             .collect();
 
         // Apply updates and collect bonds to break
         let mut broken_bonds = Vec::new();
-        for (bond_id, force, should_break) in bond_updates {
-            if let Some(bond) = self.bond_registry.get_mut(&bond_id) {
+        for ((atom1_id, atom2_id), force, should_break) in bond_updates {
+            if let Some(bond) = self.bond_map.get_mut(&(atom1_id, atom2_id)) {
                 bond.force = force;
             }
             if should_break {
-                broken_bonds.push(bond_id);
+                broken_bonds.push((atom1_id, atom2_id));
             }
         }
 
-        // Remove broken bonds
-        for bond_id in broken_bonds {
-            self.remove_bond(bond_id);
+        // Remove broken bonds REACTIONNNNNNNNN
+        for (atom1_id, atom2_id) in broken_bonds {
+            self.remove_bond(atom1_id, atom2_id);
         }
     }
 }

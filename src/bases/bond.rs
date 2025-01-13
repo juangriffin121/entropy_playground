@@ -47,8 +47,8 @@ impl Force for BondForce {
     fn calculate(&self, atom: &Atom, recipient: &Recipient) -> (f32, f32) {
         let mut fx = 0.0;
         let mut fy = 0.0;
-        for bond_idx in &atom.bonds {
-            let bond = &recipient.bond_registry[&bond_idx];
+        for bonded_id in &atom.bonded_atoms {
+            let bond = &recipient.bond_map[&order_bond((atom.id, *bonded_id))];
             if bond.is_atom1(atom) {
                 let f = bond.force;
                 fx += f.0;
@@ -66,6 +66,7 @@ impl Force for BondForce {
 #[derive(Debug, Deserialize, Clone)]
 pub struct BondProperties {
     pub strength: f32, // Strength of the bond
+    pub equilibrium_distance: f32,
     pub breaking_distance: f32,
 }
 
@@ -107,4 +108,28 @@ impl BondDefinitions {
         }
         tuple_map
     }
+}
+
+pub fn order_bond(pair: (usize, usize)) -> (usize, usize) {
+    (pair.0.min(pair.1), pair.0.max(pair.1))
+}
+
+pub fn add_bond(
+    bond_map: &mut HashMap<(usize, usize), Bond>,
+    atom1: &mut Atom,
+    atom2: &mut Atom,
+    k: f32,
+    equilibrium_distance: f32,
+    breaking_distance: f32,
+) {
+    let bond = Bond::new(
+        atom1.id,
+        atom2.id,
+        k,
+        equilibrium_distance,
+        breaking_distance,
+    );
+    bond_map.insert(order_bond((atom1.id, atom2.id)), bond);
+    atom1.bonded_atoms.insert(atom2.id);
+    atom2.bonded_atoms.insert(atom1.id);
 }

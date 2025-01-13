@@ -1,6 +1,6 @@
 use super::{
     atom::{Atom, DistributionJSON, Element, ElementsJSON},
-    bond::{Bond, BondForce, BondProperties},
+    bond::{order_bond, Bond, BondForce, BondProperties},
     checks::JSONChecker,
     initialization::Either,
     loader::load,
@@ -33,10 +33,10 @@ pub struct Recipient {
     pub molecule_registry: HashMap<usize, Molecule>,
     pub molecule_blueprints: Option<Vec<MoleculeBlueprint>>,
     pub next_molecule_id: usize,
+    pub blueprint_id_map: Option<HashMap<MoleculeBlueprint, usize>>,
 
-    pub bond_registry: HashMap<usize, Bond>,
+    pub bond_map: HashMap<(usize, usize), Bond>,
     pub bond_blueprints: Option<HashMap<(String, String), BondProperties>>,
-    pub next_bond_id: usize,
 
     pub forming_reactions: Option<
         HashMap<
@@ -44,7 +44,8 @@ pub struct Recipient {
             FormingReactionBlueprint,
         >,
     >,
-    pub breaking_reactions: Option<HashMap<(MoleculeBlueprint, usize), BreakingReactionBlueprint>>,
+    pub breaking_reactions:
+        Option<HashMap<(MoleculeBlueprint, (usize, usize)), BreakingReactionBlueprint>>,
 
     pub force_registry: Vec<Box<dyn Force>>,
 }
@@ -80,6 +81,18 @@ impl Recipient {
                 Some((a, b, c)) => (Some(a), Some(b), Some(c)),
                 None => (None, None, None),
             };
+
+        let blueprint_id_map: Option<HashMap<MoleculeBlueprint, usize>> = match molecule_blueprints
+        {
+            Some(ref blueprints) => Some(
+                blueprints
+                    .iter()
+                    .enumerate()
+                    .map(|(i, mbp)| (mbp.clone(), i))
+                    .collect(),
+            ),
+            None => None,
+        };
 
         let shape = data.shape;
         let paths = load(&data.position_file).expect("couldnt load paths from position_file");
@@ -142,10 +155,10 @@ impl Recipient {
             molecule_registry: HashMap::new(),
             molecule_blueprints,
             next_molecule_id: 0,
+            blueprint_id_map,
 
-            bond_registry: HashMap::new(),
+            bond_map: HashMap::new(),
             bond_blueprints,
-            next_bond_id: 0,
 
             forming_reactions,
             breaking_reactions,
@@ -153,41 +166,19 @@ impl Recipient {
         }
     }
 
-    pub fn add_bond(
-        &mut self,
-        atom1_id: usize,
-        atom2_id: usize,
-        k: f32,
-        equilibrium_distance: f32,
-        breaking_distance: f32,
-    ) {
-        let bond = Bond::new(
-            atom1_id,
-            atom2_id,
-            k,
-            equilibrium_distance,
-            breaking_distance,
-        );
-        self.bond_registry.insert(self.next_bond_id, bond);
-        self.contents[atom1_id].bonds.insert(self.next_bond_id);
-        self.contents[atom2_id].bonds.insert(self.next_bond_id);
-        self.next_bond_id += 1;
-    }
-
-    pub fn remove_bond(&mut self, bond_id: usize) {
-        if let Some(bond) = self.bond_registry.get(&bond_id) {
-            let atom1_id = bond.atom1_id;
-            self.contents[atom1_id].bonds.remove(&bond_id);
-            let atom2_id = bond.atom2_id;
-            self.contents[atom2_id].bonds.remove(&bond_id);
+    pub fn remove_bond(&mut self, atom1_id: usize, atom2_id: usize) {
+        if let Some(bond) = self.bond_map.get(&order_bond((atom1_id, atom2_id))) {
+            self.contents[atom1_id].bonded_atoms.remove(&atom2_id);
+            self.contents[atom2_id].bonded_atoms.remove(&atom1_id);
 
             for molecule in &mut self.molecule_registry {
+                println!("AAAAAH i reached here");
                 unimplemented!()
                 // deal with later
             }
         }
 
-        self.bond_registry.remove(&bond_id);
+        self.bond_map.remove(&order_bond((atom1_id, atom2_id)));
     }
 }
 
@@ -307,7 +298,7 @@ fn all_fragmentations(
     explicit_molecules: Option<HashMap<String, MoleculeBlueprint>>,
 ) -> Option<(
     HashMap<(Either<ParticleBlueprint>, (Option<usize>, Option<usize>)), FormingReactionBlueprint>,
-    HashMap<(MoleculeBlueprint, usize), BreakingReactionBlueprint>,
+    HashMap<(MoleculeBlueprint, (usize, usize)), BreakingReactionBlueprint>,
     Vec<MoleculeBlueprint>,
 )> {
     let mut reaction_registry = HashMap::new();
@@ -337,22 +328,19 @@ fn all_fragmentations(
         })
         .flatten()
         .collect();
-    let breaking_reactions: HashMap<(MoleculeBlueprint, usize), BreakingReactionBlueprint> =
-        reaction_registry
-            .iter()
-            .map(|(_, molecule_reactions)| {
-                molecule_reactions
-                    .iter()
-                    .map(|(_, reaction)| {
-                        (
-                            (reaction.reactants.clone(), reaction.bond_idx),
-                            reaction.clone(),
-                        )
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .flatten()
-            .collect();
+    let breaking_reactions: HashMap<
+        (MoleculeBlueprint, (usize, usize)),
+        BreakingReactionBlueprint,
+    > = reaction_registry
+        .iter()
+        .map(|(_, molecule_reactions)| {
+            molecule_reactions
+                .iter()
+                .map(|(_, reaction)| ((reaction.reactants.clone(), reaction), reaction.clone()))
+                .collect::<Vec<_>>()
+        })
+        .flatten()
+        .collect();
     let molecules: Vec<MoleculeBlueprint> = reaction_registry
         .iter()
         .map(|(molecule, _)| molecule.clone())

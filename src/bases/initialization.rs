@@ -2,7 +2,10 @@ use super::{
     molecule::MoleculeBlueprint,
     reaction::{BreakingReactionBlueprint, FormingReactionBlueprint, ParticleBlueprint},
 };
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    usize,
+};
 
 pub fn recursive_definitions(
     particle: &ParticleBlueprint,
@@ -37,7 +40,7 @@ pub fn recursive_definitions(
                     .filter(|b| b != bond)
                     .collect();
                 let (fragments, breaking_reaction, forming_reaction) =
-                    get_reactions_and_fragments(&molecule, remaining, *bond, bond_idx);
+                    get_reactions_and_fragments(&molecule, remaining, *bond);
                 molecule_reactions.push((forming_reaction, breaking_reaction));
 
                 match fragments {
@@ -70,7 +73,6 @@ fn get_reactions_and_fragments(
     molecule: &MoleculeBlueprint,
     remaining: Vec<(usize, usize)>,
     bond: (usize, usize),
-    bond_idx: usize,
 ) -> (
     Either<ParticleBlueprint>,
     BreakingReactionBlueprint,
@@ -81,13 +83,15 @@ fn get_reactions_and_fragments(
             let breaking_reaction = BreakingReactionBlueprint {
                 reactants: molecule.clone(),
                 products: Either::One(fragment.clone()),
-                bond_idx,
+                broken_bond: bond,
+                new_idx_map: Either::One(Some(new_idx_map.clone())),
             };
 
             let forming_reaction = FormingReactionBlueprint {
                 products: molecule.clone(),
                 reactants: Either::One(fragment.clone()),
                 atom_idxs: (Some(new_idx_map[&bond.0]), Some(new_idx_map[&bond.1])),
+                new_idx_map: Either::One(reverse(&Some(new_idx_map))),
             };
             let fragments = Either::One(fragment);
             (fragments, breaking_reaction, forming_reaction)
@@ -99,7 +103,8 @@ fn get_reactions_and_fragments(
             let breaking_reaction = BreakingReactionBlueprint {
                 reactants: molecule.clone(),
                 products: Either::Two((fragment.clone(), fragment2.clone())),
-                bond_idx,
+                broken_bond: bond,
+                new_idx_map: Either::Two((fragment_idx_map.clone(), fragment2_idx_map.clone())),
             };
 
             let forming_reaction = FormingReactionBlueprint {
@@ -107,20 +112,21 @@ fn get_reactions_and_fragments(
                 reactants: Either::Two((fragment.clone(), fragment2.clone())),
                 atom_idxs: (
                     match fragment_idx_map {
-                        Some(map) => Some(
+                        Some(ref map) => Some(
                             *map.get(&bond.0)
                                 .expect("if reactant1 is a molecule it should contain atom1"),
                         ),
                         None => None,
                     },
                     match fragment2_idx_map {
-                        Some(map) => Some(
+                        Some(ref map) => Some(
                             *map.get(&bond.1)
                                 .expect("if reactant2 is a molecule it should contain atom2"),
                         ),
                         None => None,
                     },
                 ),
+                new_idx_map: Either::Two((reverse(&fragment_idx_map), reverse(&fragment2_idx_map))),
             };
             let fragments = Either::Two((fragment, fragment2));
             (fragments, breaking_reaction, forming_reaction)
@@ -235,4 +241,8 @@ fn make_new_particle(
     } else {
         (ParticleBlueprint::Atom(atoms[atom_idxs[0]].clone()), None)
     }
+}
+
+fn reverse(idx_map: &Option<HashMap<usize, usize>>) -> Option<HashMap<usize, usize>> {
+    Some(idx_map.as_ref()?.iter().map(|(&i, &j)| (j, i)).collect())
 }

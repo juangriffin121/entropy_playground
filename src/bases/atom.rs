@@ -16,7 +16,7 @@ pub struct Atom {
     pub molecule_id: Option<usize>,
     pub id_in_molecule: Option<usize>,
     pub chemical_nature: String,
-    pub bonds: HashSet<usize>,
+    pub bonded_atoms: HashSet<usize>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -53,7 +53,7 @@ impl Atom {
         let molecule_id = None;
         let id_in_molecule = None;
         let chemical_nature = element.to_string();
-        let bonds = HashSet::new();
+        let bonded_atoms = HashSet::new();
 
         Self {
             id,
@@ -65,7 +65,7 @@ impl Atom {
             molecule_id,
             id_in_molecule,
             chemical_nature,
-            bonds,
+            bonded_atoms,
         }
     }
 }

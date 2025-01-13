@@ -2,11 +2,13 @@
   "data" : {
     "O-O": {
       "strength" : 2.0,
-      "breaking_distance" : 5.0
+      "breaking_distance" : 5.0,
+      "equilibrium_distance": 1.0
     },
     "O-H": {
       "strength" : 1.0,
-      "breaking_distance" : 3.0
+      "breaking_distance" : 3.0,
+      "equilibrium_distance": 1.0
     }
   }
 }

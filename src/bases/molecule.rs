@@ -4,7 +4,7 @@ use std::{collections::HashMap, fs};
 #[derive(Debug, Clone)]
 pub struct Molecule {
     pub id: usize,
-    pub bonds: Vec<usize>,
+    pub bonds: Vec<(usize, usize)>,
     pub blueprint_id: usize,
 }
 
