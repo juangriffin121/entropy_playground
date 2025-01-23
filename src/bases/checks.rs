@@ -4,6 +4,7 @@ use super::{
     atom::{DistributionJSON, ElementsJSON},
     bond::BondDefinitions,
     molecule::MoleculesJSON,
+    recipient::BlueprintAtomIndex,
 };
 
 pub struct JSONChecker {}
@@ -59,23 +60,26 @@ impl JSONChecker {
     pub fn check_molecules_bonds(molecules: &MoleculesJSON) -> Result<(), String> {
         for (molecule_name, molecule) in &molecules.blueprints {
             let mut seen_bonds = HashSet::new();
-            let mut bonded_atoms: HashSet<usize> = HashSet::new();
+            let mut bonded_atoms: HashSet<BlueprintAtomIndex> = HashSet::new();
             for (idx, &(atom1_idx, atom2_idx)) in molecule.bonds.iter().enumerate() {
                 if atom1_idx == atom2_idx {
                     return Err(format!(
                         "Invalid bond in molecule {}: bond from atom {} to itself",
-                        molecule_name, atom1_idx
+                        molecule_name, atom1_idx.0
                     ));
                 }
 
-                if atom1_idx >= molecule.atoms.len() || atom2_idx >= molecule.atoms.len() {
+                if atom1_idx.0 >= molecule.atoms.len() || atom2_idx.0 >= molecule.atoms.len() {
                     return Err(format!(
                         "Invalid bond in molecule {}: 
                             bond references atom index out of range: ({}, {})",
-                        molecule_name, atom1_idx, atom2_idx
+                        molecule_name, atom1_idx.0, atom2_idx.0
                     ));
                 }
-                let ordered_bond = (atom1_idx.min(atom2_idx), atom1_idx.max(atom2_idx));
+                let ordered_bond = (
+                    BlueprintAtomIndex(atom1_idx.0.min(atom2_idx.0)),
+                    BlueprintAtomIndex(atom1_idx.0.max(atom2_idx.0)),
+                );
                 if !seen_bonds.insert(ordered_bond) {
                     return Err(format!(
                         "Duplicate bond found in molecule {}: {:?}",
@@ -86,7 +90,7 @@ impl JSONChecker {
                 bonded_atoms.insert(atom2_idx);
             }
             for (idx, _) in molecule.atoms.iter().enumerate() {
-                if !bonded_atoms.contains(&idx) {
+                if !bonded_atoms.contains(&BlueprintAtomIndex(idx)) {
                     return Err(format!(
                         "Invalid molecule {}: atom {} is not part of any bond",
                         molecule_name, idx

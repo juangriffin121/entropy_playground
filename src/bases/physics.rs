@@ -1,9 +1,13 @@
+use crate::bases::reaction::check_breaking_reactions;
+
 use super::{
     atom::Atom,
-    initialization::Either,
+    initialization::{Either, SingleOrPair},
     molecule::{Molecule, MoleculeBlueprint},
-    reaction::{check_forming_reactions, FormingReactionBlueprint, ParticleBlueprint},
-    recipient::Recipient,
+    reaction::{
+        check_forming_reactions, FormingReactionBlueprint, FormingReactionKey, ParticleBlueprint,
+    },
+    recipient::{BlueprintAtomIndex, MoleculeId, Recipient, WorldAtomId},
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -78,8 +82,24 @@ impl CollisionEngine {
         let next_molecule_id = &mut recipient.next_molecule_id;
         let blueprint_id_map = &recipient.blueprint_id_map;
         let bond_blueprints = &recipient.bond_blueprints;
+        let mut count = 0;
+        let mut molecules_seen: HashSet<MoleculeId> = HashSet::new();
+        let mut atoms_seen: HashSet<WorldAtomId> = HashSet::new();
+
         for (atom_ids, reactant_idxs, reaction) in reactions {
-            // ensure not seen molecules if molecules for now, perhaps later it can be done better
+            count += 1;
+            println!("checking reaction {}", count);
+            // Check if any reactant is already seen
+            if any_in(&reactant_idxs, &mut molecules_seen) {
+                println!("skipping reaction for seen reactant {:?}", reactant_idxs);
+                continue;
+            }
+            if atoms_seen.contains(&atom_ids.0) || atoms_seen.contains(&atom_ids.1) {
+                println!("skipping reaction for seen atom {:?}", atom_ids);
+                continue;
+            }
+            atoms_seen.insert(atom_ids.0);
+            atoms_seen.insert(atom_ids.1);
             reaction.apply(
                 atom_ids,
                 reactant_idxs,
@@ -102,17 +122,22 @@ impl CollisionEngine {
         grid: &Grid,
         atoms: &mut Vec<Atom>,
         dimensions: (f32, f32),
-        forming_reactions: &'a Option<
-            HashMap<
-                (Either<ParticleBlueprint>, (Option<usize>, Option<usize>)),
-                FormingReactionBlueprint,
-            >,
-        >,
-        molecule_registry: &HashMap<usize, Molecule>,
+        forming_reactions: &'a Option<HashMap<FormingReactionKey, FormingReactionBlueprint>>,
+        molecule_registry: &HashMap<MoleculeId, Molecule>,
         molecule_blueprints: &Option<Vec<MoleculeBlueprint>>,
         dt: f32,
-    ) -> Vec<((usize, usize), Either<usize>, &'a FormingReactionBlueprint)> {
-        let mut seen: HashSet<(usize, usize)> = HashSet::new();
+    ) -> Vec<(
+        (WorldAtomId, WorldAtomId),
+        Either<
+            MoleculeId,
+            (
+                Either<MoleculeId, WorldAtomId>,
+                Either<MoleculeId, WorldAtomId>,
+            ),
+        >,
+        &'a FormingReactionBlueprint,
+    )> {
+        let mut seen: HashSet<(WorldAtomId, WorldAtomId)> = HashSet::new();
         let mut reactions = Vec::new();
         for atom_idx in 0..atoms.len() {
             let cell = grid.get_cell(&atoms[atom_idx]);
@@ -123,14 +148,17 @@ impl CollisionEngine {
                     if atom_idx == *candidate_idx {
                         continue;
                     }
-                    let (i, j) = (atom_idx.min(*candidate_idx), atom_idx.max(*candidate_idx));
+                    let (i, j) = (
+                        WorldAtomId(atom_idx.min(*candidate_idx)),
+                        WorldAtomId(atom_idx.max(*candidate_idx)),
+                    );
 
                     if seen.contains(&(i, j)) {
                         continue;
                     }
                     seen.insert((i, j));
-                    let (left, right) = atoms.split_at_mut(j);
-                    let a = &mut left[i];
+                    let (left, right) = atoms.split_at_mut(j.0);
+                    let a = &mut left[i.0];
                     let b = &mut right[0];
                     if self.check_collision(a, b) {
                         let reaction = self.resolve_particle_particle(
@@ -159,16 +187,21 @@ impl CollisionEngine {
         &self,
         atoms: &mut Vec<Atom>,
         dimensions: (f32, f32),
-        forming_reactions: &'a Option<
-            HashMap<
-                (Either<ParticleBlueprint>, (Option<usize>, Option<usize>)),
-                FormingReactionBlueprint,
-            >,
-        >,
-        molecule_registry: &HashMap<usize, Molecule>,
+        forming_reactions: &'a Option<HashMap<FormingReactionKey, FormingReactionBlueprint>>,
+        molecule_registry: &HashMap<MoleculeId, Molecule>,
         molecule_blueprints: &Option<Vec<MoleculeBlueprint>>,
         dt: f32,
-    ) -> Vec<((usize, usize), Either<usize>, &'a FormingReactionBlueprint)> {
+    ) -> Vec<(
+        (WorldAtomId, WorldAtomId),
+        Either<
+            MoleculeId,
+            (
+                Either<MoleculeId, WorldAtomId>,
+                Either<MoleculeId, WorldAtomId>,
+            ),
+        >,
+        &'a FormingReactionBlueprint,
+    )> {
         let mut reactions = Vec::new();
         for i in 0..atoms.len() {
             for j in (i + 1)..atoms.len() {
@@ -202,16 +235,21 @@ impl CollisionEngine {
         &self,
         a: &mut Atom,
         b: &mut Atom,
-        forming_reactions: &'a Option<
-            HashMap<
-                (Either<ParticleBlueprint>, (Option<usize>, Option<usize>)),
-                FormingReactionBlueprint,
-            >,
-        >,
-        molecule_registry: &HashMap<usize, Molecule>,
+        forming_reactions: &'a Option<HashMap<FormingReactionKey, FormingReactionBlueprint>>,
+        molecule_registry: &HashMap<MoleculeId, Molecule>,
         molecule_blueprints: &Option<Vec<MoleculeBlueprint>>,
         dt: f32,
-    ) -> Option<((usize, usize), Either<usize>, &'a FormingReactionBlueprint)> {
+    ) -> Option<(
+        (WorldAtomId, WorldAtomId),
+        Either<
+            MoleculeId,
+            (
+                Either<MoleculeId, WorldAtomId>,
+                Either<MoleculeId, WorldAtomId>,
+            ),
+        >,
+        &'a FormingReactionBlueprint,
+    )> {
         let dx = a.position.0 - b.position.0;
         let dy = a.position.1 - b.position.1;
         let distance = (dx * dx + dy * dy).sqrt();
@@ -239,19 +277,24 @@ impl CollisionEngine {
 
         let impulse = 2.0 * dot_product / mass_sum;
 
-        let (idxs, reaction) = check_forming_reactions(
+        let reaction_data = check_forming_reactions(
             a,
             b,
             forming_reactions,
             molecule_registry,
             molecule_blueprints,
-        )?;
+        );
 
         a.velocity.0 -= impulse * mass2 * nx;
         a.velocity.1 -= impulse * mass2 * ny;
         b.velocity.0 += impulse * mass1 * nx;
         b.velocity.1 += impulse * mass1 * ny;
-        Some(((a.id, b.id), idxs, reaction))
+
+        if let Some((idxs, reaction)) = reaction_data {
+            Some(((a.id, b.id), idxs, reaction))
+        } else {
+            None
+        }
     }
 
     pub fn resolve_particle_wall(&self, atom: &mut Atom, shape: (f32, f32), wall: Wall) {
@@ -395,6 +438,7 @@ impl Recipient {
         }
 
         CollisionEngine.process_collisions(self);
+        println!("molecules: {}", self.molecule_registry.len());
     }
 
     pub fn total_force(&self, atom: &Atom) -> (f32, f32) {
@@ -408,22 +452,23 @@ impl Recipient {
 
     fn update_bonds(&mut self) {
         // First collect all updates without mutating anything
-        let bond_updates: Vec<((usize, usize), (f32, f32), bool)> = self
+        let bond_updates: Vec<((WorldAtomId, WorldAtomId), (f32, f32), bool)> = self
             .bond_map
             .iter()
             .map(|(&(atom1_id, atom2_id), bond)| {
-                let atom1 = &self.contents[atom1_id];
-                let atom2 = &self.contents[atom2_id];
+                let atom1 = &self.contents[atom1_id.0];
+                let atom2 = &self.contents[atom2_id.0];
                 let dx = atom2.position.0 - atom1.position.0;
                 let dy = atom2.position.1 - atom1.position.1;
                 let distance = (dx * dx + dy * dy).sqrt();
-                let force_magnitude = bond.k * (distance - bond.equilibrium_distance);
+                let force_magnitude =
+                    bond.k * (distance - (bond.equilibrium_distance + atom1.radius + atom2.radius));
                 let fx = force_magnitude * dx / distance;
                 let fy = force_magnitude * dy / distance;
                 (
                     (atom1_id, atom2_id),
                     (fx, fy),
-                    distance > bond.breaking_distance,
+                    distance > bond.breaking_distance + atom1.radius + atom2.radius,
                 )
             })
             .collect();
@@ -441,7 +486,72 @@ impl Recipient {
 
         // Remove broken bonds REACTIONNNNNNNNN
         for (atom1_id, atom2_id) in broken_bonds {
-            self.remove_bond(atom1_id, atom2_id);
+            let atom1 = &self.contents[atom1_id.0];
+            let atom2 = &self.contents[atom2_id.0];
+            let reaction = check_breaking_reactions(
+                atom1,
+                atom2,
+                &self.breaking_reactions,
+                &self.molecule_registry,
+                &self.molecule_blueprints,
+            );
+            if let Some((molecule_id, reaction)) = reaction {
+                reaction.apply(
+                    atom1_id,
+                    atom2_id,
+                    &mut self.contents,
+                    molecule_id,
+                    &mut self.molecule_registry,
+                    &mut self.bond_map,
+                    &mut self.next_molecule_id,
+                    self.molecule_blueprints.as_ref().unwrap(),
+                    self.blueprint_id_map.as_ref().unwrap(),
+                );
+            }
+        }
+    }
+}
+
+fn any_in(
+    reactant_idxs: &Either<
+        MoleculeId,
+        (
+            Either<MoleculeId, WorldAtomId>,
+            Either<MoleculeId, WorldAtomId>,
+        ),
+    >,
+    seen: &mut HashSet<MoleculeId>,
+) -> bool {
+    match reactant_idxs {
+        Either::Left(mol_id) => {
+            let answer = seen.contains(&mol_id);
+            if !answer {
+                seen.insert(mol_id.clone());
+            }
+            answer
+        }
+        Either::Right((id1, id2)) => {
+            let answer1 = match id1 {
+                Either::Left(mol_id) => {
+                    let answer = seen.contains(&mol_id);
+                    if !answer {
+                        seen.insert(mol_id.clone());
+                    }
+                    answer
+                }
+                Either::Right(_) => false,
+            };
+            let answer2 = match id2 {
+                Either::Left(mol_id) => {
+                    let answer = seen.contains(&mol_id);
+                    if !answer {
+                        seen.insert(mol_id.clone());
+                    }
+                    answer
+                }
+                Either::Right(_) => false,
+            };
+            answer1 || answer2
         }
     }
 }

@@ -1,5 +1,5 @@
 use super::molecule::Molecule;
-use super::recipient::Recipient;
+use super::recipient::{BlueprintAtomIndex, MoleculeAtomIndex, MoleculeId, Recipient, WorldAtomId};
 use plotters::style::RGBColor;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
@@ -7,16 +7,16 @@ use std::fs;
 
 #[derive(Debug)]
 pub struct Atom {
-    pub id: usize,
+    pub id: WorldAtomId,
     pub mass: f32,
     pub radius: f32,
     pub color: RGBColor,
     pub position: (f32, f32),
     pub velocity: (f32, f32),
-    pub molecule_id: Option<usize>,
-    pub id_in_molecule: Option<usize>,
+    pub molecule_id: Option<MoleculeId>,
+    pub id_in_molecule: Option<MoleculeAtomIndex>,
     pub chemical_nature: String,
-    pub bonded_atoms: HashSet<usize>,
+    pub bonded_atoms: HashSet<WorldAtomId>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -40,7 +40,7 @@ impl ElementsJSON {
 
 impl Atom {
     pub fn new(
-        id: usize,
+        id: WorldAtomId,
         position: (f32, f32),
         velocity: (f32, f32),
         element: &str,

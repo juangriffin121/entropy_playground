@@ -1,10 +1,13 @@
 use serde::Deserialize;
 use std::{collections::HashMap, fs};
 
+use super::recipient::{BlueprintAtomIndex, MoleculeAtomIndex, MoleculeId, WorldAtomId};
+
 #[derive(Debug, Clone)]
 pub struct Molecule {
-    pub id: usize,
-    pub bonds: Vec<(usize, usize)>,
+    pub id: MoleculeId,
+    pub atoms: Vec<WorldAtomId>,
+    pub bonds_: Vec<(MoleculeAtomIndex, MoleculeAtomIndex)>, // (atom_1 pos in molecule, atom_2 pos in molecule)
     pub blueprint_id: usize,
 }
 
@@ -15,7 +18,7 @@ pub struct MoleculesJSON {
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq, Hash)]
 pub struct MoleculeBlueprint {
     pub atoms: Vec<String>,
-    pub bonds: Vec<(usize, usize)>, // Index of the first and second atom in the bond, index with respect to the
+    pub bonds: Vec<(BlueprintAtomIndex, BlueprintAtomIndex)>, // Index of the first and second atom in the bond, index with respect to the
     // atoms vec in molecule blueprint
     pub canonical: bool,
 }
@@ -28,7 +31,12 @@ impl MoleculesJSON {
 }
 
 impl MoleculeBlueprint {
-    pub fn canonicalize(&self) -> MoleculeBlueprint {
+    pub fn canonicalize(
+        &self,
+    ) -> (
+        MoleculeBlueprint,
+        HashMap<BlueprintAtomIndex, BlueprintAtomIndex>,
+    ) {
         let mut indices: Vec<usize> = (0..self.atoms.len()).collect();
 
         // Sort by atom type and number of bonds
@@ -37,7 +45,7 @@ impl MoleculeBlueprint {
                 self.atoms[i].clone(),
                 self.bonds
                     .iter()
-                    .filter(|(a, b)| *a == i || *b == i)
+                    .filter(|(a, b)| a.0 == i || b.0 == i)
                     .count(),
             )
         });
@@ -45,21 +53,34 @@ impl MoleculeBlueprint {
         // Reorder atoms and bonds
         let new_atoms: Vec<String> = indices.iter().map(|&i| self.atoms[i].clone()).collect();
 
-        let new_bonds: Vec<(usize, usize)> = self
-            .bonds
+        let mapping: HashMap<BlueprintAtomIndex, BlueprintAtomIndex> = indices
             .iter()
-            .map(|(a, b)| {
-                let new_a = indices.iter().position(|&x| x == *a).unwrap();
-                let new_b = indices.iter().position(|&x| x == *b).unwrap();
-                (new_a.min(new_b), new_a.max(new_b))
+            .enumerate()
+            .map(|(new_index, &old_index)| {
+                (BlueprintAtomIndex(old_index), BlueprintAtomIndex(new_index))
             })
             .collect();
 
-        MoleculeBlueprint {
+        let new_bonds = self
+            .bonds
+            .iter()
+            .map(|(a, b)| {
+                let new_a = indices.iter().position(|&x| x == a.0).unwrap();
+                let new_b = indices.iter().position(|&x| x == b.0).unwrap();
+                (
+                    BlueprintAtomIndex(new_a.min(new_b)),
+                    BlueprintAtomIndex(new_a.max(new_b)),
+                )
+            })
+            .collect();
+        // Create the canonicalized molecule
+        let canonical_molecule = MoleculeBlueprint {
             atoms: new_atoms,
             bonds: new_bonds,
             canonical: true,
-        }
+        };
+
+        (canonical_molecule, mapping)
     }
 
     pub fn compare_canonical(&self, other: &MoleculeBlueprint) -> bool {

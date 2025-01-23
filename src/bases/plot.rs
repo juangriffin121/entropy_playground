@@ -59,6 +59,26 @@ pub fn plot_recipient(recipient: &Recipient, output_path: &str, plot_grid: bool)
                 .unwrap();
         }
     }
+    for (atom1_id, atom2_id) in recipient.bond_map.keys() {
+        let atom1 = &recipient.contents[atom1_id.0];
+        let atom2 = &recipient.contents[atom2_id.0];
+        let color = {
+            if atom1.radius > atom2.radius {
+                atom1.color
+            } else {
+                atom2.color
+            }
+        };
+        chart
+            .draw_series(LineSeries::new(
+                vec![
+                    (atom1.position.0, -atom1.position.1),
+                    (atom2.position.0, -atom2.position.1),
+                ],
+                color.stroke_width((0.75 * (atom1.radius + atom2.radius)).round() as u32),
+            ))
+            .unwrap();
+    }
 }
 
 fn plot_paths(paths: Vec<(bool, Vec<(f64, f64)>)>, output_path: &str) {

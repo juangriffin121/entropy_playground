@@ -1,11 +1,15 @@
-use super::{atom::Atom, physics::Force, recipient::Recipient};
+use super::{
+    atom::Atom,
+    physics::Force,
+    recipient::{Recipient, WorldAtomId},
+};
 use serde::Deserialize;
 use std::{collections::HashMap, fs};
 
 #[derive(Debug)]
 pub struct Bond {
-    pub atom1_id: usize,
-    pub atom2_id: usize,
+    pub atom1_id: WorldAtomId,
+    pub atom2_id: WorldAtomId,
     pub k: f32, // Spring constant
     pub equilibrium_distance: f32,
     pub force: (f32, f32), //cached force value
@@ -16,8 +20,8 @@ pub struct BondForce {}
 
 impl Bond {
     pub fn new(
-        atom1_id: usize,
-        atom2_id: usize,
+        atom1_id: WorldAtomId,
+        atom2_id: WorldAtomId,
         k: f32,
         equilibrium_distance: f32,
         breaking_distance: f32,
@@ -110,18 +114,22 @@ impl BondDefinitions {
     }
 }
 
-pub fn order_bond(pair: (usize, usize)) -> (usize, usize) {
-    (pair.0.min(pair.1), pair.0.max(pair.1))
+pub fn order_bond(pair: (WorldAtomId, WorldAtomId)) -> (WorldAtomId, WorldAtomId) {
+    (
+        WorldAtomId(pair.0 .0.min(pair.1 .0)),
+        WorldAtomId(pair.0 .0.max(pair.1 .0)),
+    )
 }
 
 pub fn add_bond(
-    bond_map: &mut HashMap<(usize, usize), Bond>,
+    bond_map: &mut HashMap<(WorldAtomId, WorldAtomId), Bond>,
     atom1: &mut Atom,
     atom2: &mut Atom,
     k: f32,
     equilibrium_distance: f32,
     breaking_distance: f32,
 ) {
+    // make sure bonds are ordered
     let bond = Bond::new(
         atom1.id,
         atom2.id,
@@ -132,4 +140,15 @@ pub fn add_bond(
     bond_map.insert(order_bond((atom1.id, atom2.id)), bond);
     atom1.bonded_atoms.insert(atom2.id);
     atom2.bonded_atoms.insert(atom1.id);
+}
+
+pub fn remove_bond(
+    bond_map: &mut HashMap<(WorldAtomId, WorldAtomId), Bond>,
+    atom1: &mut Atom,
+    atom2: &mut Atom,
+) {
+    // make sure bonds are ordered
+    bond_map.remove(&(atom1.id, atom2.id));
+    atom1.bonded_atoms.remove(&atom2.id);
+    atom2.bonded_atoms.remove(&atom1.id);
 }

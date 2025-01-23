@@ -1,7 +1,6 @@
 use bases::{plot::plot_recipient, recipient::Recipient};
 use rand::{rngs::StdRng, SeedableRng};
 
-#[allow(unused)]
 mod bases;
 fn main() {
     //something fishy about rngs
