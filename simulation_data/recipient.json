@@ -1,10 +1,10 @@
 {
   "shape": [1000.0, 1000.0],
   "energy": 1000.0,
-  "position_file": "simulation_data/drawing.svg", 
+  "position_file": "simulation_data/drawing3.svg", 
   "iterations": 1000,
   "simulation_rate": 10,
-  "dt": -0.1,
+  "dt": -0.05,
   "use_grid": true,
   "references" : {
     "elements": "simulation_data/elements.json",

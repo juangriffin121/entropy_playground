@@ -1,5 +1,3 @@
-use crate::bases::reaction::check_breaking_reactions;
-
 use super::{
     atom::Atom,
     initialization::{Either, SingleOrPair},
@@ -9,6 +7,7 @@ use super::{
     },
     recipient::{BlueprintAtomIndex, MoleculeId, Recipient, WorldAtomId},
 };
+use crate::bases::reaction::check_breaking_reactions;
 use std::{
     collections::{HashMap, HashSet},
     fmt::Debug,
@@ -42,7 +41,6 @@ impl CollisionEngine {
         } else if atom.position.0 + atom.radius >= shape.0 {
             return Some(Wall::Right);
         }
-
         None
     }
 
@@ -56,7 +54,6 @@ impl CollisionEngine {
         let reactions = match &mut recipient.grid {
             Some(grid) => {
                 grid.populate(atoms);
-
                 self.grid_based_collisions(
                     grid,
                     atoms,

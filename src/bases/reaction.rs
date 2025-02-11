@@ -493,6 +493,7 @@ impl BreakingReactionBlueprint {
                             .expect("position_mapping doesnt have old_atom_position")
                     })
                     .collect();
+
                 let new_atoms_vec = order_array(&molecule.atoms, &new_atom_positions);
                 let blueprint_id = blueprint_ids_map[product_blueprint];
                 let new_bonds: Vec<(MoleculeAtomIndex, MoleculeAtomIndex)> = molecule
@@ -555,7 +556,8 @@ impl BreakingReactionBlueprint {
                             })
                             .map(|(_old_atom_position, atom_id)| atom_id.clone())
                             .collect();
-                        let new_atoms_vec = order_array(&molecule.atoms, &new_atom_positions);
+
+                        let new_atoms_vec = order_array(&molecule_atoms, &new_atom_positions);
                         let blueprint_id = blueprint_ids_map
                             .get(product_blueprint)
                             .expect("blueprint_ids_map doesnt have product_blueprint");
@@ -623,6 +625,7 @@ impl BreakingReactionBlueprint {
                             })
                             .map(|(_old_atom_position, atom_id)| atom_id.clone())
                             .collect();
+
                         let new_atoms_vec = order_array(&molecule_atoms, &new_atom_positions);
                         let blueprint_id = blueprint_ids_map
                             .get(product_blueprint)

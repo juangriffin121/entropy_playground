@@ -75,7 +75,7 @@ pub fn plot_recipient(recipient: &Recipient, output_path: &str, plot_grid: bool)
                     (atom1.position.0, -atom1.position.1),
                     (atom2.position.0, -atom2.position.1),
                 ],
-                color.stroke_width((0.75 * (atom1.radius + atom2.radius)).round() as u32),
+                color.stroke_width((0.5 * (atom1.radius + atom2.radius)).round() as u32),
             ))
             .unwrap();
     }

@@ -19,7 +19,7 @@ fn main() {
                     recipient.iterations / recipient.simulation_rate
                         - i / recipient.simulation_rate
                 ),
-                true,
+                false,
             );
         }
     }
@@ -37,7 +37,7 @@ fn main() {
                     "plots/{:05}.png",
                     recipient.iterations / rec2.simulation_rate + i / rec2.simulation_rate
                 ),
-                true,
+                false,
             );
         }
     }
